@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>チャット</title>
+</head>
+<body>
+
+  <h1>チャット</h1>
+
+  <fieldset>
+    <legend>切り替え</legend>
+    <select id="room-selector" onchange="switchRoom()"></select>
+  </select>
+  </fieldset>
+
+  <fieldset>
+    <legend>新規登録</legend>
+    <input type="text" id="new-room-name" placeholder="部屋の名前">
+    <input type="text" id="new-room-url" placeholder="GASのURL(https://...)">
+    <button onclick="addRoom()">登録</button>
+  </fieldset>
+
+  <fieldset>
+    <legend>チャット</legend>
+    <input type="text" id="chat-name" placeholder="名前（任意）">
+    <input type="text" id="chat-message" placeholder="本文を入力">
+    <button onclick="sendMessage()">送信</button>
+  </fieldset>
+
+  <hr>
+
+  <h2>TL</h2>
+  <button onclick="loadMessages()">更新</button>
+  <div id="chat-display"></div>
+
+  <script>
+    // 公式ロビーの初期設定（自分のGAS URLに書き換えてください）
+    const OFFICIAL_ROOM = { 
+      name: "default", 
+      url: "https://script.google.com/macros/s/AKfycbwtogqu4U6nGCSvf-tG1OCM3Jyiar0OTe3n2TgrOLJ-GPJpswN7-deWboRbJF0EpPDs/exec" 
+    };
+
+    let currentUrl = OFFICIAL_ROOM.url;
+    let updateTimer;
+
+    // --- 初期化処理 ---
+    window.onload = function() {
+      updateRoomList();
+      startAutoUpdate();
+    };
+
+    // --- 部屋の管理処理 ---
+    function getCustomRooms() {
+      const saved = localStorage.getItem("hacker_chat_rooms");
+      return saved ? JSON.parse(saved) : [];
+    }
+
+    function addRoom() {
+      const nameInput = document.getElementById("new-room-name").value;
+      const urlInput = document.getElementById("new-room-url").value;
+      
+      if(!nameInput || !urlInput) return;
+
+      const rooms = getCustomRooms();
+      rooms.push({ name: nameInput, url: urlInput });
+      localStorage.setItem("hacker_chat_rooms", JSON.stringify(rooms));
+      
+      document.getElementById("new-room-name").value = "";
+      document.getElementById("new-room-url").value = "";
+      
+      updateRoomList();
+    }
+
+    function updateRoomList() {
+      const selector = document.getElementById("room-selector");
+      selector.innerHTML = ""; 
+
+      // 公式ロビーを追加
+      let officialOption = document.createElement("option");
+      officialOption.text = OFFICIAL_ROOM.name;
+      officialOption.value = OFFICIAL_ROOM.url;
+      selector.add(officialOption);
+
+      // ユーザー登録の部屋を追加
+      const customRooms = getCustomRooms();
+      for (let i = 0; i < customRooms.length; i++) {
+        let option = document.createElement("option");
+        option.text = customRooms[i].name;
+        option.value = customRooms[i].url;
+        selector.add(option);
+      }
+      
+      // 選択状態を現在のURLに合わせる
+      selector.value = currentUrl;
+    }
+
+    function switchRoom() {
+      const selector = document.getElementById("room-selector");
+      currentUrl = selector.value;
+      document.getElementById("chat-display").innerHTML = "<i>通信座標を変更中...</i>";
+      loadMessages();
+    }
+
+    // --- 通信処理 ---
+    function sendMessage() {
+      const name = document.getElementById("chat-name").value;
+      const message = document.getElementById("chat-message").value;
+      
+      if (!message) return;
+
+      // 送信中は入力欄を空にする
+      document.getElementById("chat-message").value = "";
+
+      fetch(currentUrl, {
+        method: "POST",
+        // GASのCORS制約を回避するため、あえてtext/plainで送るテクニック
+        headers: { "Content-Type": "text/plain" },
+        body: JSON.stringify({ name: name, message: message })
+      }).then(() => {
+        loadMessages(); // 送信完了後に即時リロード
+      });
+    }
+
+    function loadMessages() {
+      fetch(currentUrl)
+        .then(response => response.json())
+        .then(data => {
+          const display = document.getElementById("chat-display");
+          display.innerHTML = "";
+          
+          // データ（配列）を逆順にして新しいものを上に表示
+          for (let i = data.length - 1; i >= 0; i--) {
+            const row = data[i];
+            const time = new Date(row[0]).toLocaleString();
+            const sender = row[1];
+            const text = row[2];
+            
+            const msgDiv = document.createElement("div");
+            // HTMLの基本タグだけで構造化
+            msgDiv.innerHTML = "<p><b>" + sender + "</b> <small>[" + time + "]</small><br>" + text + "</p><hr>";
+            display.appendChild(msgDiv);
+          }
+        })
+        .catch(error => {
+          document.getElementById("chat-display").innerHTML = "<b>エラー：通信に失敗しました。URLが間違っているか、GASが停止しています。</b>";
+        });
+    }
+
+    // 5秒ごとに自動受信
+    function startAutoUpdate() {
+      loadMessages();
+      if(updateTimer) clearInterval(updateTimer);
+      updateTimer = setInterval(loadMessages, 5000);
+    }
+  </script>
+</body>
+</html>
